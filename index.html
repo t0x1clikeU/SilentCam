@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>サイレントカメラ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000;
+      font-family: 'Helvetica Neue', sans-serif;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    #video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      z-index: 2;
+      flex-wrap: wrap;
+    }
+
+    select, button {
+      font-size: 18px;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      backdrop-filter: blur(6px);
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    button:hover, select:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    #photoPreview {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 80vw;
+      max-width: 500px;
+      transform: translate(-50%, -50%);
+      border-radius: 16px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+      z-index: 3;
+      display: none;
+    }
+
+    #buttonsContainer {
+      position: absolute;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      display: none;
+      gap: 10px;
+      flex-direction: row;
+    }
+
+    #buttonsContainer button {
+      font-size: 20px;
+      padding: 14px 28px;
+      background: #00c853;
+      border: none;
+      border-radius: 12px;
+      color: white;
+      cursor: pointer;
+      width: 45%;
+    }
+
+    #discardButton {
+      background: #ff5252;
+    }
+
+    #termsButton {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 4;
+    }
+
+    #termsModal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 5;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    #termsContent {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 20px;
+      border-radius: 12px;
+      max-width: 90vw;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    #closeTerms {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    #closeTerms button {
+      background: #ff5252;
+    }
+
+    canvas {
+      display: none;
+    }
+
+    @media (max-width: 600px) {
+      #buttonsContainer button {
+        width: 48%;
+      }
+    }
+
+  </style>
+</head>
+<body>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+  <img id="photoPreview" alt="撮影画像">
+  
+  <div id="buttonsContainer">
+    <a id="saveLink" download="photo.png">
+      <button>保存</button>
+    </a>
+    <button id="discardButton">破棄</button>
+  </div>
+
+  <div id="controls">
+    <select id="cameraSelect">
+      <option value="user">内カメ</option>
+      <option value="environment" selected>外カメ</option>
+    </select>
+    <button id="capture">Shot</button>
+  </div>
+
+  <div id="termsButton">
+    <button id="showTerms">規約</button>
+  </div>
+
+  <div id="termsModal">
+    <div id="termsContent">
+      <h2>利用規約</h2>
+      <p>このアプリケーションを使用することにより、以下の利用規約に同意したものとみなします。</p>
+      <ul>
+        <li>撮影した写真の保存と利用は自己責任で行ってください。</li>
+	<li>撮影した写真はサーバーでは保存されません。。</li>
+        <li>このアプリは録音や位置情報などには一切アクセスしません。</li>
+        <li>法令に違反する用途での使用は禁止されています。</li>
+        <li>作者は一切の責任を負いません。</li>
+      </ul>
+      <div id="closeTerms">
+        <button id="hideTerms">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const photoPreview = document.getElementById('photoPreview');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const saveLink = document.getElementById('saveLink');
+    const saveContainer = document.getElementById('buttonsContainer');
+    const discardContainer = document.getElementById('discardButton');
+    const termsModal = document.getElementById('termsModal');
+    const showTerms = document.getElementById('showTerms');
+    const hideTerms = document.getElementById('hideTerms');
+    const discardButton = document.getElementById('discardButton');
+
+    let currentStream = null;
+
+    async function startCamera(facingMode) {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: facingMode } },
+          audio: false
+        });
+        currentStream = stream;
+        video.srcObject = stream;
+      } catch (e) {
+        alert("カメラが使えません: " + e.message);
+      }
+    }
+
+    document.getElementById('capture').addEventListener('click', () => {
+      const context = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const dataUrl = canvas.toDataURL('image/png');
+      photoPreview.src = dataUrl;
+      photoPreview.style.display = 'block';
+      saveLink.href = dataUrl;
+
+      saveContainer.style.display = 'flex';
+    });
+
+    discardButton.addEventListener('click', () => {
+      photoPreview.style.display = 'none';
+      saveContainer.style.display = 'none';
+    });
+
+    cameraSelect.addEventListener('change', () => {
+      startCamera(cameraSelect.value);
+      photoPreview.style.display = 'none';
+      saveContainer.style.display = 'none';
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      startCamera('environment');
+    });
+
+    showTerms.addEventListener('click', () => {
+      termsModal.style.display = 'flex';
+    });
+
+    hideTerms.addEventListener('click', () => {
+      termsModal.style.display = 'none';
+    });
+  </script>
+
+</body>
+</html>
